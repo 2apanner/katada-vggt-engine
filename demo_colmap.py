@@ -111,8 +111,9 @@ def demo_fn(args):
 
     # Run VGGT for camera and depth estimation
     model = VGGT()
-    _URL = "https://huggingface.co/facebook/VGGT-1B/resolve/main/model.pt"
-    model.load_state_dict(torch.hub.load_state_dict_from_url(_URL))
+    from katada.checkpoint import load_vggt_weights
+
+    load_vggt_weights(model)
     model.eval()
     model = model.to(device)
     print(f"Model loaded")
