@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "aws_access_key_id": "INJECT_AT_RUNTIME",
+  "aws_secret_access_key": "INJECT_AT_RUNTIME",
+  "aws_region": "ap-southeast-1",
+  "s3_endpoint_url": null,
+  "bucket": "katadas3",
+  "storage_prefix": "pilot-sg-drone-360",
+  "model": "nerfstudio",
+  "engine": "vggt",
+  "quality_tier": "full",
+  "train_iters": 10000,
+  "vggt_checkpoint_url": "https://huggingface.co/buckets/apanner/VGGT-1B-Commercial-bucket/resolve/vggt_1B_commercial.pt",
+  "frame_count": 240
+}
