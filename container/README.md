@@ -1,21 +1,23 @@
 # Sealed runtime + Docker for cloud GPU
 
-## Docker image = full S3 pipeline
+## Docker image = lightweight shell (engine from GitHub at runtime)
 
-The image **is** the cloud GPU runner. On start it:
+The image **does not** bake in engine source or pip deps. On first start it:
 
-1. Resolves S3 connection (file, env, or fetch `pilot/connection.json` from S3)
-2. Downloads `projects/{prefix}/raw/images.zip`
-3. Runs VGGT + splatfacto
-4. Uploads `projects/{prefix}/processed/pilot/*.splat`
+1. `git clone` [katada-vggt-engine](https://github.com/2apanner/katada-vggt-engine) from GitHub
+2. `pip install` requirements (cached on volume after first run)
+3. Resolves S3 connection (file, env, or fetch `pilot/connection.json`)
+4. Downloads `projects/{prefix}/raw/images.zip`
+5. Runs VGGT + splatfacto
+6. Uploads `projects/{prefix}/processed/pilot/*.splat`
 
-Nothing else required except credentials at runtime.
+**Mac upload** only sends footage + `connection.json` — no 128 MB bundle.
 
 ## Build
 
 ```bash
 ./container/build_image.sh
-# → katada/vggt-runtime:latest
+# → katada/vggt-runtime:latest  (~500 MB base CUDA image, not 2+ GB with engine)
 ```
 
 ## Run on cloud GPU

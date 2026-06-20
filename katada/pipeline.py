@@ -45,13 +45,23 @@ def copy_scene_images(input_dir: Path, scene_dir: Path, max_frames: int | None) 
     return len(images)
 
 
-def run_demo_colmap(scene_dir: Path, *, use_ba: bool) -> int:
+def run_demo_colmap(
+    scene_dir: Path,
+    *,
+    use_ba: bool,
+    batch_size: int | None = None,
+    batch_overlap: int | None = None,
+) -> int:
     root = engine_root()
     demo = root / "demo_colmap.py"
     if not demo.is_file():
         raise FileNotFoundError(f"demo_colmap.py missing in {root}")
 
     cmd = [sys.executable, str(demo), "--scene_dir", str(scene_dir)]
+    if batch_size is not None and batch_size > 0:
+        cmd.extend(["--batch-size", str(batch_size)])
+    if batch_overlap is not None and batch_overlap >= 0:
+        cmd.extend(["--batch-overlap", str(batch_overlap)])
     if use_ba:
         cmd.append("--use_ba")
 

@@ -28,25 +28,19 @@ cd production/dev/pilot
 
 ## Ship to Colab / cloud
 
+**Colab** clones the engine from GitHub at runtime (no S3 bundle upload):
+
+```bash
+cd production/dev/pilot
+./colab/scripts/push_engine.sh   # after editing engine
+```
+
+**Cloud GPU (Docker)** — image has engine baked in:
+
 ```bash
 cd production/dev/engines/katada_vggt_engine
-./container/build_bundle.sh
-cd ../../pilot
-python3 colab/scripts/upload_runtime_bundle.py --prefix pilot-sg-drone-360
-```
-
-### Run full S3 pipeline (container / cloud GPU)
-
-```bash
-docker run --gpus all -v $PWD/connection.json:/run/connection.json:ro \
-  katada/vggt-runtime run --connection-file /run/connection.json
-```
-
-Or inside Colab after bundle extract:
-
-```bash
-python3 /content/katada_vggt_engine/katada/run_pilot.py \
-  --connection-file /content/katada_connection.json
+./container/build_image.sh
+./container/run_cloud_gpu.sh
 ```
 
 Credentials are **never** baked into the bundle — injected at runtime via `connection.json`.

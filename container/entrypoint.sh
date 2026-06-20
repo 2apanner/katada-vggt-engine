@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Katada VGGT runtime entrypoint — Docker / cloud GPU with built-in S3 pipeline.
+# Katada VGGT runtime entrypoint — bootstrap engine from GitHub, then run S3 pipeline.
 set -euo pipefail
+
+# shellcheck source=/bootstrap.sh
+source /bootstrap.sh
 
 ENGINE_ROOT="${KATADA_ENGINE_ROOT:-/opt/katada/katada_vggt_engine}"
 export PYTHONPATH="${ENGINE_ROOT}:${PYTHONPATH:-}"
@@ -11,27 +14,26 @@ cmd="${1:-run}"
 case "$cmd" in
   help)
     cat <<EOF
-Katada VGGT Docker — full S3 pipeline (download → reconstruct → upload)
+Katada VGGT Docker — lightweight image (engine from GitHub at runtime)
 
-  run [args]   Default command. Runs katada/run_pilot.py (S3 in + out).
+  run [args]   Full S3 pipeline via katada/run_pilot.py
 
 Connection (pick one):
   A) Mount file:  -v ./connection.json:/run/connection.json:ro
   B) Env vars:    AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET,
-                  KATADA_STORAGE_PREFIX  (+ optional AWS_REGION, S3_ENDPOINT_URL, HF_TOKEN)
-  C) Both:        env vars + auto-fetch pilot/connection.json from S3
+                  KATADA_STORAGE_PREFIX  (+ optional AWS_REGION, HF_TOKEN)
 
-Cloud GPU example (Vast / RunPod):
-  export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \\
-         S3_BUCKET=katadas3 KATADA_STORAGE_PREFIX=pilot-sg-drone-360
-  docker run --gpus all --rm \\
-    -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \\
-    -e S3_BUCKET -e KATADA_STORAGE_PREFIX -e AWS_REGION -e HF_TOKEN \\
-    -v katada-work:/workspace \\
-    katada/vggt-runtime:latest
+First start clones ${KATADA_ENGINE_REPO:-GitHub} and pip-installs deps (~5-15 min).
+Later starts reuse cached engine + deps.
 
-Other commands: poses | version | shell
+Cloud GPU:
+  ./container/run_cloud_gpu.sh
+
+Other: poses | version | shell | bootstrap
 EOF
+    ;;
+  bootstrap)
+    echo ">> Bootstrap complete — engine at ${ENGINE_ROOT}"
     ;;
   version)
     python3 -c "from katada.version import ENGINE_VERSION; print(ENGINE_VERSION)"

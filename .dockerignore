@@ -1,0 +1,10 @@
+# Lightweight image — engine is cloned from GitHub at container start, not copied here.
+*
+!container/bootstrap.sh
+!container/entrypoint.sh
+!container/run_cloud_gpu.sh
+!container/README.md
+!container/connection.template.json
+!container/build_image.sh
+!container/build_bundle.sh
+!Dockerfile

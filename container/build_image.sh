@@ -7,5 +7,5 @@ ENGINE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 IMAGE="${KATADA_RUNTIME_IMAGE:-katada/vggt-runtime:latest}"
 
 docker build -t "$IMAGE" "$ENGINE_DIR"
-echo ">> Built $IMAGE"
-echo ">> Push: docker tag $IMAGE <registry>/katada-vggt-runtime:latest && docker push ..."
+echo ">> Built $IMAGE (lightweight — engine cloned from GitHub at runtime)"
+echo ">> Run:   ./container/run_cloud_gpu.sh"

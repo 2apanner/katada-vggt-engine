@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from katada.connection import ConnectionSettings
+from katada.batch_plan import vggt_batch_plan_from_vram
 from katada.pipeline import copy_scene_images, engine_root, run_demo_colmap
 from katada.version import ENGINE_VERSION
 
@@ -129,13 +130,19 @@ def run_full_reconstruction(
     scene_dir.mkdir(parents=True, exist_ok=True)
 
     tier = settings.quality_tier
-    use_ba = tier in ("balanced", "full")
     frame_count = copy_scene_images(input_dir, scene_dir, max_frames=None)
+    batch_plan = vggt_batch_plan_from_vram(float(os.environ.get("KATADA_VRAM_GB", "15")), frame_count)
+    use_ba = tier in ("balanced", "full") and batch_plan.get("vggt_single_pass", False)
     print(f"\n=== STEP 3a: VGGT poses ({tier}, {frame_count} frames) ===", flush=True)
 
     ckpt_env = apply_checkpoint_env(settings)
     os.environ.update(ckpt_env)
-    run_demo_colmap(scene_dir, use_ba=use_ba)
+    run_demo_colmap(
+        scene_dir,
+        use_ba=use_ba,
+        batch_size=batch_plan["vggt_batch_size"],
+        batch_overlap=batch_plan["vggt_batch_overlap"],
+    )
     run_ns_process_colmap(scene_dir, processed_dir)
 
     return run_splatfacto_train_and_export(
