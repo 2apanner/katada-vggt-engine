@@ -229,7 +229,7 @@ def apply_exclude_masks_from_disk(
         if exclude is None:
             continue
         if exclude.shape[0] != height or exclude.shape[1] != width:
-            exclude = cv2.resize(exclude, (width, height), interpolation=cv.INTER_NEAREST)
+            exclude = cv2.resize(exclude, (width, height), interpolation=cv2.INTER_NEAREST)
         keep = exclude < 128
         out[frame_idx] *= keep.astype(np.float32)
         reused += 1
@@ -344,7 +344,7 @@ def apply_exclude_masks_to_depth_conf(
             color_filter=color_filter,
         )
         if exclude.shape[0] != height or exclude.shape[1] != width:
-            exclude = cv2.resize(exclude, (width, height), interpolation=cv.INTER_NEAREST)
+            exclude = cv2.resize(exclude, (width, height), interpolation=cv2.INTER_NEAREST)
         keep = exclude < 128
         out[frame_idx] *= keep.astype(np.float32)
 
