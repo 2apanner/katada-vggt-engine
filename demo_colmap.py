@@ -81,7 +81,13 @@ def parse_args():
         "--building-focus",
         action="store_true",
         default=False,
-        help="Exclude ground/side margins from depth confidence",
+        help="Exclude ground/side margins from depth confidence (off by default — can eat facade edges)",
+    )
+    parser.add_argument(
+        "--mask-trees",
+        action="store_true",
+        default=False,
+        help="Zero depth confidence on vegetation / tree canopy pixels",
     )
     parser.add_argument(
         "--load-resolution",
@@ -299,7 +305,7 @@ def demo_fn(args):
         original_coords_np = merged.original_coords
         base_image_path_list = merged.image_names
 
-        if args.mask_sky or args.building_focus:
+        if args.mask_sky or args.mask_trees or args.building_focus:
             from katada.building_masks import apply_exclude_masks_to_depth_conf
 
             masks_dir = Path(args.scene_dir) / "masks"
@@ -308,6 +314,7 @@ def demo_fn(args):
                 depth_conf,
                 image_path_list,
                 mask_sky=args.mask_sky,
+                mask_trees=args.mask_trees,
                 building_focus=args.building_focus,
                 color_filter=True,
                 masks_dir=masks_dir if masks_dir.is_dir() else None,
@@ -319,7 +326,15 @@ def demo_fn(args):
                     flush=True,
                 )
             else:
-                print(">> Applied building/sky masks to VGGT depth confidence", flush=True)
+                parts = []
+                if args.mask_sky:
+                    parts.append("sky")
+                if args.mask_trees:
+                    parts.append("trees")
+                if args.building_focus:
+                    parts.append("margins")
+                label = "+".join(parts) if parts else "building"
+                print(f">> Applied {label} masks to VGGT depth confidence", flush=True)
 
         reconstruction, points_3d_vis, points_rgb_vis, shared_camera, reconstruction_resolution = _build_colmap_wo_ba(
             extrinsic,

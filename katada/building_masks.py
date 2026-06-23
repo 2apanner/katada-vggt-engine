@@ -70,11 +70,56 @@ def _run_skyseg(onnx_session, input_size: tuple[int, int], image: np.ndarray) ->
     return (normalized * 255.0).astype("uint8")
 
 
+def _keep_sky_connected_to_top(sky_mask: np.ndarray) -> np.ndarray:
+    """Keep only sky connected to the top edge — drops bright facade misclassified as sky."""
+    height, width = sky_mask.shape
+    if not np.any(sky_mask > 127):
+        return sky_mask
+
+    visit = np.zeros((height, width), dtype=np.uint8)
+    stack: list[tuple[int, int]] = [
+        (0, col) for col in range(width) if sky_mask[0, col] > 127
+    ]
+    while stack:
+        row, col = stack.pop()
+        if row < 0 or row >= height or col < 0 or col >= width or visit[row, col]:
+            continue
+        if sky_mask[row, col] < 128:
+            continue
+        visit[row, col] = 255
+        stack.extend([(row - 1, col), (row + 1, col), (row, col - 1), (row, col + 1)])
+
+    return np.where(visit > 0, 255, 0).astype(np.uint8)
+
+
 def sky_exclude_mask(image_bgr: np.ndarray, onnx_session) -> np.ndarray:
     """Return uint8 mask: 255 = sky (exclude), 0 = keep."""
     result_map = _run_skyseg(onnx_session, (320, 320), image_bgr)
     result_map = cv2.resize(result_map, (image_bgr.shape[1], image_bgr.shape[0]))
-    return np.where(result_map >= 32, 255, 0).astype(np.uint8)
+    raw = np.where(result_map >= 42, 255, 0).astype(np.uint8)
+    return _keep_sky_connected_to_top(raw)
+
+
+def vegetation_exclude_mask(image_bgr: np.ndarray) -> np.ndarray:
+    """Return uint8 mask: 255 = trees/vegetation (exclude), 0 = keep."""
+    hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
+    green_range = cv2.inRange(hsv, (30, 35, 35), (92, 255, 255))
+    yellow_green = cv2.inRange(hsv, (22, 28, 28), (98, 255, 210))
+    foliage = cv2.bitwise_or(green_range, yellow_green)
+
+    blue, green, red = cv2.split(image_bgr.astype(np.int16))
+    dominant_green = (
+        (green > red + 12)
+        & (green > blue + 8)
+        & (green > 55)
+        & (green - np.minimum(red, blue) > 10)
+    )
+    combined = np.maximum(foliage, (dominant_green.astype(np.uint8) * 255))
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel, iterations=1)
+    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel, iterations=1)
+    return combined.astype(np.uint8)
 
 
 def color_clutter_exclude_mask(image_bgr: np.ndarray) -> np.ndarray:
@@ -123,7 +168,8 @@ def build_exclude_mask_for_image(
     onnx_session,
     *,
     mask_sky: bool = True,
-    building_focus: bool = True,
+    mask_trees: bool = True,
+    building_focus: bool = False,
     color_filter: bool = True,
 ) -> np.ndarray:
     path = Path(image_path)
@@ -136,6 +182,8 @@ def build_exclude_mask_for_image(
 
     if mask_sky:
         parts.append(sky_exclude_mask(image, onnx_session))
+    if mask_trees:
+        parts.append(vegetation_exclude_mask(image))
     if color_filter:
         parts.append(color_clutter_exclude_mask(image))
     if building_focus:
@@ -158,6 +206,7 @@ def _mask_worker_task(
     mask_out_str: str,
     cache_path_str: str | None,
     mask_sky: bool,
+    mask_trees: bool,
     building_focus: bool,
     color_filter: bool,
 ) -> tuple[str, float]:
@@ -170,6 +219,7 @@ def _mask_worker_task(
             path,
             _MASK_WORKER_SESSION,
             mask_sky=mask_sky,
+            mask_trees=mask_trees,
             building_focus=building_focus,
             color_filter=color_filter,
         )
@@ -242,7 +292,8 @@ def write_training_masks(
     mask_dir: Path,
     *,
     mask_sky: bool = True,
-    building_focus: bool = True,
+    mask_trees: bool = True,
+    building_focus: bool = False,
     color_filter: bool = True,
     cache_dir: Path | None = None,
     workers: int = 4,
@@ -272,6 +323,7 @@ def write_training_masks(
                     path,
                     session,
                     mask_sky=mask_sky,
+                    mask_trees=mask_trees,
                     building_focus=building_focus,
                     color_filter=color_filter,
                 )
@@ -291,6 +343,7 @@ def write_training_masks(
                 str(mask_dir / path.name),
                 str(cache_path) if cache_path else None,
                 mask_sky,
+                mask_trees,
                 building_focus,
                 color_filter,
             ))
@@ -310,7 +363,8 @@ def apply_exclude_masks_to_depth_conf(
     image_paths: list[Path | str],
     *,
     mask_sky: bool = True,
-    building_focus: bool = True,
+    mask_trees: bool = True,
+    building_focus: bool = False,
     color_filter: bool = True,
     masks_dir: Path | None = None,
     mask_cache_dir: Path | None = None,
@@ -340,6 +394,7 @@ def apply_exclude_masks_to_depth_conf(
             image_path,
             session,
             mask_sky=mask_sky,
+            mask_trees=mask_trees,
             building_focus=building_focus,
             color_filter=color_filter,
         )
