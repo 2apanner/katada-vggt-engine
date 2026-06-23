@@ -38,15 +38,15 @@ def _single_pass_ceiling(vram_gb: float) -> int:
     """Optimistic max frames for one VGGT aggregator pass (OOM retry backs off at runtime)."""
     vram = max(float(vram_gb), 4.0)
     if vram >= 80:
-        return 240
+        return 512
     if vram >= 40:
-        return 240
+        return 320
     if vram >= 24:
-        return 48
+        return 96
     if vram >= 16:
-        return 24
+        return 48
     if vram >= 12:
-        return 12
+        return 24
     return 8
 
 
@@ -54,15 +54,15 @@ def _max_frames_per_vggt_pass(vram_gb: float) -> tuple[int, int, str, str]:
     """Batched fallback: max frames per pass, overlap, tier id, quality class."""
     vram = max(float(vram_gb), 4.0)
     if vram >= 80:
-        return 48, 4, "a100_80gb", "final"
+        return 96, 6, "a100_80gb", "ultra"
     if vram >= 40:
-        return 32, 3, "a100_40gb", "final"
+        return 64, 5, "a100_40gb", "final"
     if vram >= 24:
-        return 16, MIN_BATCH_OVERLAP, "l4_a10_24gb", "final"
+        return 32, 4, "l4_a10_24gb", "final"
     if vram >= 16:
-        return 10, MIN_BATCH_OVERLAP, "gpu_16gb", "preview"
+        return 16, MIN_BATCH_OVERLAP, "gpu_16gb", "preview"
     if vram >= 12:
-        return 6, MIN_BATCH_OVERLAP, "t4_15gb", "preview"
+        return 10, MIN_BATCH_OVERLAP, "t4_15gb", "preview"
     return 4, MIN_BATCH_OVERLAP, "gpu_small", "preview"
 
 
@@ -71,9 +71,9 @@ def vggt_batch_plan_from_vram(vram_gb: float, frame_count: int | None = None) ->
     Pick batch size + overlap from detected GPU VRAM and optional frame count.
 
     Strategy:
-    - 40/80 GB: try single-pass first (best VGGT accuracy); OOM handler halves batch at runtime.
+    - 80+ GB: single-pass up to 512 frames; ultra quality class.
+    - 40+ GB: single-pass up to 320 frames.
     - Batched fallback uses larger passes + overlap >= 2 for seam alignment.
-    - T4/small GPUs: preview tier (many passes, drift risk).
     """
     max_pass, overlap, tier, quality_class = _max_frames_per_vggt_pass(vram_gb)
     single_ceiling = _single_pass_ceiling(vram_gb)
@@ -107,9 +107,9 @@ def vggt_batch_plan_from_vram(vram_gb: float, frame_count: int | None = None) ->
     overlap = max(MIN_BATCH_OVERLAP, min(overlap, batch_size - 1))
     batch_count = count_overlapping_batches(frames, batch_size, overlap) if frames else 0
 
-    if frames > batch_size and batch_count > 12 and vram_gb >= 24:
-        target_passes = 7 if vram_gb >= 80 else 9 if vram_gb >= 40 else 12
-        for try_size in range(batch_size + 2, min(frames, max_pass * 4) + 1, 2):
+    if frames > batch_size and batch_count > 10 and vram_gb >= 24:
+        target_passes = 5 if vram_gb >= 80 else 7 if vram_gb >= 40 else 10
+        for try_size in range(batch_size + 4, min(frames, max_pass * 6) + 1, 4):
             try_overlap = max(MIN_BATCH_OVERLAP, min(overlap, try_size - 1))
             try_count = count_overlapping_batches(frames, try_size, try_overlap)
             if try_count <= target_passes:

@@ -14,6 +14,64 @@ from katada.pipeline import copy_scene_images, engine_root, run_demo_colmap
 from katada.version import ENGINE_VERSION
 
 
+def _patch_mediapy_for_numpy2() -> None:
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.find_spec("mediapy")
+    if spec is None or not spec.origin:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q", "mediapy>=1.2.2"],
+            check=True,
+        )
+        spec = importlib.util.find_spec("mediapy")
+    if spec is None or not spec.origin:
+        raise RuntimeError("mediapy not installed")
+
+    init_path = Path(spec.origin).resolve()
+    text = init_path.read_text(encoding="utf-8")
+    needle = "class _VideoArray(npt.NDArray[Any]):"
+    replacement = "class _VideoArray(np.ndarray):"
+    if needle in text:
+        init_path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+        print(">> Patched mediapy _VideoArray for numpy 2", flush=True)
+
+
+def _patch_nerfstudio_torch_load() -> None:
+    import importlib.util
+
+    spec = importlib.util.find_spec("nerfstudio.utils.eval_utils")
+    if spec is None or not spec.origin:
+        print(">> WARN: nerfstudio eval_utils not found", flush=True)
+        return
+
+    path = Path(spec.origin)
+    text = path.read_text(encoding="utf-8")
+    replacements = (
+        ('torch.load(load_path, map_location="cpu")', 'torch.load(load_path, map_location="cpu", weights_only=False)'),
+        ("torch.load(load_path, map_location='cpu')", "torch.load(load_path, map_location='cpu', weights_only=False)"),
+    )
+    for old, new in replacements:
+        if old in text and new not in text:
+            path.write_text(text.replace(old, new), encoding="utf-8")
+            print(">> Patched nerfstudio eval_utils torch.load (weights_only=False)", flush=True)
+            return
+
+
+def _ensure_ns_export_deps() -> None:
+    print(">> Preparing ns-export deps…", flush=True)
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-q", "mediapy>=1.2.2"],
+        check=True,
+    )
+    _patch_mediapy_for_numpy2()
+    _patch_nerfstudio_torch_load()
+
+
+def _ns_export_env() -> dict[str, str]:
+    return {}
+
+
 def _run(cmd: list[str], *, label: str, env: dict | None = None, check: bool = True) -> int:
     print(f"\n>> [{label}] {' '.join(cmd)}", flush=True)
     proc = subprocess.run(cmd, env={**os.environ, **(env or {})})
@@ -30,17 +88,22 @@ def apply_checkpoint_env(settings: ConnectionSettings) -> dict[str, str]:
     return env
 
 
-def run_ns_process_colmap(scene_dir: Path, processed_dir: Path) -> None:
+def run_ns_process_colmap(scene_dir: Path, processed_dir: Path, *, num_downscales: int = 2) -> None:
     if processed_dir.exists():
         shutil.rmtree(processed_dir)
     _run(
         [
             "ns-process-data",
-            "colmap",
+            "images",
             "--data",
-            str(scene_dir),
+            str(scene_dir / "images"),
             "--output-dir",
             str(processed_dir),
+            "--skip-colmap",
+            "--colmap-model-path",
+            str(scene_dir / "sparse"),
+            "--num-downscales",
+            str(num_downscales),
         ],
         label="NS-COLMAP-IMPORT",
     )
@@ -71,12 +134,15 @@ def run_splatfacto_train_and_export(
             "--vis",
             "tensorboard",
             "--viewer.quit-on-train-completion",
+            "True",
             "--max-num-iterations",
             str(train_iters),
             "--output-dir",
             str(train_dir),
             "--logging.steps-per-log",
-            "50",
+            "100",
+            "--pipeline.model.camera-optimizer.mode",
+            "off",
         ],
         label="TRAIN",
     )
@@ -90,6 +156,7 @@ def run_splatfacto_train_and_export(
     export_dir.mkdir(parents=True)
 
     print("\n=== STEP 3c: Export gaussian splat ===", flush=True)
+    _ensure_ns_export_deps()
     _run(
         [
             "ns-export",
@@ -100,6 +167,7 @@ def run_splatfacto_train_and_export(
             str(export_dir),
         ],
         label="EXPORT",
+        env=_ns_export_env(),
     )
 
     for pattern in ("*.splat", "*.ply"):

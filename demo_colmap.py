@@ -9,6 +9,7 @@ import numpy as np
 import glob
 import os
 import copy
+from pathlib import Path
 import torch
 import torch.nn.functional as F
 
@@ -69,6 +70,30 @@ def parse_args():
         action="store_true",
         default=False,
         help="Apply distributed loop-closure correction for 360° orbits (≥60 frames)",
+    )
+    parser.add_argument(
+        "--mask-sky",
+        action="store_true",
+        default=False,
+        help="Zero depth confidence on sky pixels (building-focused COLMAP)",
+    )
+    parser.add_argument(
+        "--building-focus",
+        action="store_true",
+        default=False,
+        help="Exclude ground/side margins from depth confidence",
+    )
+    parser.add_argument(
+        "--load-resolution",
+        type=int,
+        default=0,
+        help="VGGT image load resolution (0 = auto from VRAM)",
+    )
+    parser.add_argument(
+        "--inference-resolution",
+        type=int,
+        default=0,
+        help="VGGT inference resolution (0 = auto, default 518)",
     )
     return parser.parse_args()
 
@@ -202,8 +227,23 @@ def demo_fn(args):
         raise ValueError(f"No images found in {image_dir}")
     base_image_path_list = [os.path.basename(path) for path in image_path_list]
 
-    vggt_fixed_resolution = 518
-    img_load_resolution = 1024
+    vggt_fixed_resolution = args.inference_resolution if args.inference_resolution > 0 else 518
+    img_load_resolution = args.load_resolution if args.load_resolution > 0 else 1024
+    vram = _detect_vram_gb()
+    if args.load_resolution <= 0:
+        if vram >= 80:
+            img_load_resolution = 1280
+        elif vram >= 40:
+            img_load_resolution = 1280
+    if args.inference_resolution <= 0:
+        vggt_fixed_resolution = 518
+
+    conf_thres_value = args.conf_thres_value
+    if vram >= 80 and conf_thres_value >= 5.0:
+        conf_thres_value = 3.0
+    elif vram >= 40 and conf_thres_value >= 5.0:
+        conf_thres_value = 3.75
+
     batch_size, batch_overlap = _resolve_batch_plan(args, len(image_path_list))
     use_vggt_runner = len(image_path_list) > 1
 
@@ -259,13 +299,35 @@ def demo_fn(args):
         original_coords_np = merged.original_coords
         base_image_path_list = merged.image_names
 
+        if args.mask_sky or args.building_focus:
+            from katada.building_masks import apply_exclude_masks_to_depth_conf
+
+            masks_dir = Path(args.scene_dir) / "masks"
+            mask_cache_dir = Path(args.scene_dir) / "mask_cache"
+            depth_conf = apply_exclude_masks_to_depth_conf(
+                depth_conf,
+                image_path_list,
+                mask_sky=args.mask_sky,
+                building_focus=args.building_focus,
+                color_filter=True,
+                masks_dir=masks_dir if masks_dir.is_dir() else None,
+                mask_cache_dir=mask_cache_dir if mask_cache_dir.is_dir() else None,
+            )
+            if masks_dir.is_dir():
+                print(
+                    ">> Applied precomputed building masks to VGGT depth confidence",
+                    flush=True,
+                )
+            else:
+                print(">> Applied building/sky masks to VGGT depth confidence", flush=True)
+
         reconstruction, points_3d_vis, points_rgb_vis, shared_camera, reconstruction_resolution = _build_colmap_wo_ba(
             extrinsic,
             intrinsic,
             depth_map,
             depth_conf,
             images,
-            conf_thres_value=args.conf_thres_value,
+            conf_thres_value=conf_thres_value,
             vggt_fixed_resolution=vggt_fixed_resolution,
         )
     else:
@@ -322,7 +384,7 @@ def demo_fn(args):
                 depth_map,
                 depth_conf,
                 images,
-                conf_thres_value=args.conf_thres_value,
+                conf_thres_value=conf_thres_value,
                 vggt_fixed_resolution=vggt_fixed_resolution,
             )
 
