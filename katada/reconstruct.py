@@ -107,6 +107,12 @@ def run_ns_process_colmap(scene_dir: Path, processed_dir: Path, *, num_downscale
         ],
         label="NS-COLMAP-IMPORT",
     )
+    masks_src = scene_dir / "masks"
+    if masks_src.is_dir():
+        masks_dst = processed_dir / "masks"
+        if masks_dst.exists():
+            shutil.rmtree(masks_dst)
+        shutil.copytree(masks_src, masks_dst)
 
 
 def run_splatfacto_train_and_export(
