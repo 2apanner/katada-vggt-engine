@@ -51,6 +51,9 @@ def run_demo_colmap(
     use_ba: bool,
     batch_size: int | None = None,
     batch_overlap: int | None = None,
+    inference_resolution: int | None = None,
+    building_focus: bool = False,
+    mask_trees: bool = False,
 ) -> int:
     root = engine_root()
     demo = root / "demo_colmap.py"
@@ -64,6 +67,12 @@ def run_demo_colmap(
         cmd.extend(["--batch-overlap", str(batch_overlap)])
     if use_ba:
         cmd.append("--use_ba")
+    if inference_resolution is not None and inference_resolution > 0:
+        cmd.extend(["--inference-resolution", str(inference_resolution)])
+    if building_focus:
+        cmd.append("--building-focus")
+    if mask_trees:
+        cmd.append("--mask-trees")
 
     env = {
         **os.environ,
